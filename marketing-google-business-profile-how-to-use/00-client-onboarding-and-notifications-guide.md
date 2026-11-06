@@ -2,6 +2,8 @@
 
 This operational guide provides the exact standard procedure for onboarding a new client business into WingerX Marketing, configuring client contact details (WhatsApp and Email) in the **Notifications** tab, and systematically delivering initial onboarding messages (`MSG_01` to `MSG_05`) via the **Manual Send** tab.
 
+> **Navigation:** Go to 'https://app.wingerx.com/marketing?setup=1' for the Onboarding Wizard, or go to https://app.wingerx.com/marketing page and click the **Notifications** tab.
+
 ---
 
 ## 1. Overview of the Onboarding Workflow
@@ -31,9 +33,9 @@ When a new client signs up for Google Business Profile (GBP) marketing managemen
 
 ## 2. Step 1: Onboarding the Business Profile
 
-You can onboard a new location using either the **Onboarding Wizard** (`/marketing?setup=1`) or from the sidebar under **GBP Integrations**.
+You can onboard a new location using either the **Onboarding Wizard** ('https://app.wingerx.com/marketing?setup=1') or from the sidebar under **GBP Integrations** (go to https://app.wingerx.com/marketing page and click **GBP Integrations** tab).
 
-### Option A: Via the Onboarding Wizard (`/marketing?setup=1`)
+### Option A: Via the Onboarding Wizard ('https://app.wingerx.com/marketing?setup=1')
 1. In the top-right workspace switcher, make sure you are in **Your workspace** (marked with the `"Your workspace"` badge and user icon).
 2. Follow the 4-step wizard:
    * **Step 1 (Connect Google or Search Places):**
@@ -44,10 +46,10 @@ You can onboard a new location using either the **Onboarding Wizard** (`/marketi
    * **Step 3 (Syncing):**
      * The system ingests existing business data, reviews, and initial profile score.
    * **Step 4 (Completion):**
-     * Click **Go to Marketing Dashboard**.
+     * Click **Go to Marketing Dashboard** (https://app.wingerx.com/marketing).
 
 ### Option B: Via GBP Integrations Tab
-1. Select **GBP Integrations** in the left sidebar.
+1. In the left sidebar, click **GBP Integrations** tab.
 2. Click **Add New Location**.
 3. Choose **Connect Google Account** or **Add via Google Places**.
 4. Confirm details to create the location record.
@@ -65,6 +67,7 @@ Before sending messages or generating content, ensure the business details are c
    * **Services & Attributes:** Add all offered services (e.g., "Emergency Service", "Online Consultations").
    * **Hours:** Set regular operating hours and special/holiday hours.
 2. **Brand Identity Tab:**
+   * Go to https://app.wingerx.com/marketing page and click **Brand Identity** tab.
    * Enter **Brand Voice & Tone** (e.g., "Professional, Empathetic, Authority").
    * Enter **Primary & Accent Colors**.
    * Specify **Prohibited Claims** (e.g., "Never guarantee 100% cure", "No pricing mentions without approval").
@@ -75,7 +78,7 @@ Before sending messages or generating content, ensure the business details are c
 
 Running an audit generates the baseline health score and triggers auto-seeding of the **90-Day Growth Roadmap**:
 
-1. Navigate to **GBP Integrations** (or **Location Audits**).
+1. In the left sidebar, click **GBP Integrations** tab (or **Location Audits**).
 2. Click the **Run Audit** button.
 3. Wait 10–20 seconds while the system checks:
    * Profile completeness (Phone, Website, Categories, Hours, Services)
@@ -90,7 +93,7 @@ Running an audit generates the baseline health score and triggers auto-seeding o
 
 To ensure the client receives automated updates and manual messages, configure their WhatsApp and Email channels:
 
-1. In the left sidebar, click **Notifications** (shield icon).
+1. In the left sidebar, click **Notifications** tab (shield icon).
 2. Select your client's location from the top location dropdown.
 
 ### A. WhatsApp Channel Configuration
@@ -124,7 +127,7 @@ To ensure the client receives automated updates and manual messages, configure t
 
 ## 6. Step 5: Deliver Initial Onboarding Messages (MSG_01 to MSG_05)
 
-Navigate to **Notifications** → **Manual Send** tab. The system provides pre-configured templates categorized under **Onboarding**. Follow this exact sequence over the first 24–48 hours:
+Go to https://app.wingerx.com/marketing page, click **Notifications** tab, and switch to the **Manual Send** sub-tab. The system provides pre-configured templates categorized under **Onboarding**. Follow this exact sequence over the first 24–48 hours:
 
 ```
 Timeline:
@@ -261,7 +264,7 @@ Our team has also created a prioritized action plan for your business.
    * `{{finding_2}}`: e.g., "Respond to 6 unreplied customer reviews"
    * `{{finding_3}}`: e.g., "Upload 10 high-resolution interior & exterior photos"
    * `{{finding_4}}`: e.g., "Create weekly Google update posts targeting local keywords"
-   * `{{roadmap_link}}`: Link to the 90-Day Roadmap tab
+   * `{{roadmap_link}}`: Link to the 90-Day Roadmap (Tasks tab)
 4. Click **Send WhatsApp Message**.
 
 #### Message Content:
@@ -317,7 +320,7 @@ We’ll analyze performance and focus on increasing valuable customer actions su
 ## 7. Verifying Delivery & Troubleshooting
 
 1. **Message History Tab:**
-   * After sending, switch to the **Message History** tab under Notifications.
+   * After sending, switch to the **Message History** sub-tab under **Notifications** tab.
    * Verify the record displays:
      * **Message Type:** e.g., `MSG_01`
      * **Recipient:** Client phone number
@@ -326,6 +329,6 @@ We’ll analyze performance and focus on increasing valuable customer actions su
 2. **If Status Shows `FAILED`:**
    * **Phone format error:** Verify number starts with `+` and country code (e.g., `+91`, `+1`).
    * **Meta window expired:** Send the Utility Icebreaker (`EMAIL_00` or `wingerx_utility_campaign_00`) with quick-reply button.
-   * **Email fallback:** Immediately send the corresponding email (`EMAIL_01` through `EMAIL_05`) via **Email Notifications** → **Manual Send**.
+   * **Email fallback:** Immediately send the corresponding email (`EMAIL_01` through `EMAIL_05`) via **Notifications** tab → **Email Notifications** → **Manual Send**.
 3. **Resending a Message:**
    * You can resend any message at any time by clicking **View & Resend** in the Manual Send list.
