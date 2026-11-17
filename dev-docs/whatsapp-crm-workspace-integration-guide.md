@@ -9,6 +9,7 @@ $$\mathbf{1\ Customer\ =\ 1\ Workspace\ =\ 1\ WhatsApp\ CRM\ Instance}$$
 * **1 Customer = 1 Workspace**: Every business or client has their own isolated workspace (e.g., `workspace_id: "ws-123"`).
 * **1 Workspace = 1 WhatsApp CRM Environment**: When a user selects a workspace in WingerX `/home/[workspaceId]` and opens **WhatsApp CRM**, the CRM frontend (`wingerx-crm/wingerx-web`) and gateway (`wingerx-crm/session-gateway`) must strictly operate **within the context of that selected workspace**.
 * **Zero Cross-Workspace Leakage**: All WhatsApp connections, active inbox conversations, message history, broadcast campaigns, contact directories, message templates, CRM connectors, and billing credits must belong **exclusively** to the active customer workspace.
+* **The URL is the Single Source of Truth**: The active workspace **must be present in the URL** at all times (`https://crm.wingerx.com/{workspace_id}/*`), and all navigation inside the CRM must read the selected workspace directly from the URL.
 
 ---
 
@@ -18,50 +19,95 @@ $$\mathbf{1\ Customer\ =\ 1\ Workspace\ =\ 1\ WhatsApp\ CRM\ Instance}$$
 sequenceDiagram
     autonumber
     actor User
-    participant WingerX as WingerX Web (/home)
+    participant WingerX as WingerX Web
     participant Backend as WingerX Backend
     participant CRM_Web as CRM Frontend
     participant Gateway as CRM Gateway
 
-    User->>WingerX: Selects Customer Workspace & Clicks "WhatsApp CRM"
+    User->>WingerX: Selects Customer Workspace and Clicks WhatsApp CRM
     WingerX->>Backend: POST /api/workspaces/{workspace_id}/products/crm_whatsapp/launch
-    Note over Backend: Issues Single-Use SSO Ticket embedding user_id & workspace_id
-    Backend-->>WingerX: Redirect URL with ticket & workspace_id
-    WingerX->>CRM_Web: Redirect to SSO Callback URL with ticket & workspace_id
+    Note over Backend: Issues Single-Use SSO Ticket embedding user_id and workspace_id
+    Backend-->>WingerX: Redirect URL with ticket and workspace_id
+    WingerX->>CRM_Web: Redirect to SSO Callback with ticket and workspace_id
     CRM_Web->>Gateway: POST /crm-api/session/sso (ticket, workspace_id)
     Gateway->>Backend: POST /api/auth/sso/verify-ticket
-    Backend-->>Gateway: User profile, tokens & active workspace details
-    Gateway-->>CRM_Web: Set-Cookie: crm_session + active_workspace
-    CRM_Web->>CRM_Web: Initialize WorkspaceProvider with active_workspace
+    Backend-->>Gateway: User profile, tokens and active workspace details
+    Gateway-->>CRM_Web: Set-Cookie crm_session and active_workspace
+    Note over CRM_Web: Redirects browser to https://crm.wingerx.com/ws-123/inbox
+    CRM_Web->>CRM_Web: Extracts workspace_id directly from URL pathname
     CRM_Web->>Gateway: GET /crm-api/wa/connections?workspace_id=ws-123
     Gateway->>Backend: GET /api/whatsapp/connections?workspace_id=ws-123
     Backend-->>Gateway: Returns connections for ws-123 only
     Gateway-->>CRM_Web: Proxies connections for ws-123 only
-    Note over CRM_Web: Displays customer name in Sidebar & loads only ws-123 data
+    Note over CRM_Web: Displays customer name in Sidebar and scopes all tabs to ws-123
 ```
 
 ---
 
-## 2. Current Gaps in `wingerx-crm`
+## 2. URL-Driven Workspace Routing (`https://crm.wingerx.com/{workspace_id}/*`)
+
+> [!IMPORTANT]
+> **Single Source of Truth Rule**:
+> 1. When a user opens WhatsApp CRM from `https://app.wingerx.com/home/{workspace_id}`, the opened application URL must strictly be `https://crm.wingerx.com/{workspace_id}` (e.g. `https://crm.wingerx.com/{workspace_id}/inbox`). The workspace ID selected on `app.wingerx.com` must be carried forward and visible in the CRM URL.
+> 2. Whenever the user navigates to any page or tab inside WhatsApp CRM (Inbox, Campaigns, Templates, Contacts, Billing, Connectors, Settings), the `{workspace_id}` **must remain in the URL path**: `https://crm.wingerx.com/{workspace_id}/{tab}`.
+> 3. The CRM application **must extract the selected workspace directly from the URL itself** (`window.location.pathname`). The URL is the single source of truth, not backend memory or stale local storage.
+
+### 2.1. URL Structure Standard
+
+All pages and tabs within WhatsApp CRM must strictly follow the path-based workspace schema:
+
+| Screen / Feature | Route Path | Description |
+| :--- | :--- | :--- |
+| **App Launch / Root Redirect** | `/` | Redirects authenticated user to `/{default_workspace_id}/inbox` |
+| **SSO Callback** | `/auth/sso-callback?ticket=...&workspace_id=...` | Redeems ticket, then replaces browser URL with `/{workspace_id}/inbox` |
+| **Connections Dashboard** | `/{workspace_id}` or `/{workspace_id}/instances` | View connected phone numbers for this workspace |
+| **Connect WhatsApp** | `/{workspace_id}/onboarding` | Embedded signup / QR pairing for this workspace |
+| **Live Inbox** | `/{workspace_id}/inbox` | Active conversations for this workspace |
+| **Message Templates** | `/{workspace_id}/templates` | Approved Meta templates for this workspace |
+| **Bulk Campaigns** | `/{workspace_id}/campaigns` | Broadcast campaigns for this workspace |
+| **Contacts Directory** | `/{workspace_id}/contacts` | Audience directory for this workspace |
+| **WhatsApp Billing** | `/{workspace_id}/billing` | Wallet balance & usage for this workspace |
+| **CRM Connectors** | `/{workspace_id}/connectors` | Twenty/Zoho/Odoo integrations for this workspace |
+
+### 2.2. Navigation & Deep-Linking Rules
+
+1. **Tab Navigation (Preserve `{workspace_id}` in URL)**:
+   When a user clicks any tab in the sidebar (for example, navigating from "Connections" to "Live Inbox", or from "Live Inbox" to "Bulk Campaigns"), the application must navigate to `/{workspace_id}/{tab}` (e.g., `/{workspace_id}/inbox`, `/{workspace_id}/campaigns`), preserving the active `{workspace_id}` at all times.
+2. **Selected Workspace Derived Directly from URL**:
+   When any page loads, mounts, or route changes:
+   - The app extracts `workspace_id` directly from `window.location.pathname` (or React router params).
+   - It validates that the authenticated user has access to this `workspace_id` (via `/crm-api/wa/workspaces`).
+   - If valid, sets this workspace as active and synchronizes the session via `POST /crm-api/session/active-workspace`.
+   - If invalid or unauthorized, shows a **403/404 Access Denied** screen with a link to return to `app.wingerx.com`.
+3. **Direct URL Entry / Bookmarks**:
+   If a user pastes or refreshes `https://crm.wingerx.com/ws-999/inbox`, the application parses `ws-999` from the URL, verifies access, and loads the data exclusively for `ws-999`.
+4. **Workspace Switcher Navigation**:
+   When the user switches workspaces using the header dropdown, the app navigates the browser directly to:
+   $$\text{https://crm.wingerx.com/}\{\text{new\_workspace\_id}\}/\{\text{current\_tab}\}$$
+
+---
+
+## 3. Current Gaps in `wingerx-crm`
 
 | Component | Current State | Target "One Workspace" State |
 | :--- | :--- | :--- |
 | **Launch Ticket** | Ticket contains only `user_id` and `target_service`. Does not bind `workspace_id`. | Ticket must store and verify `workspace_id`, returning the authorized workspace metadata. |
+| **URL Routing** | Flat paths (`/`, `/inbox`, `/campaigns`) without workspace scoping. | URL path-based routing: `https://crm.wingerx.com/{workspace_id}/{tab}`. |
 | **Session Gateway** | `POST /crm-api/session/sso` exchanges ticket and stores `user` only in session. | Session must store and track `active_workspace_id`. Expose it via `/crm-api/session/me`. |
-| **CRM Web State** | `useAuth()` loads user profile; calls `/wa/workspaces` and treats all workspaces as generic "instances". | Dedicated `WorkspaceContext` managing `activeWorkspaceId`, `activeWorkspaceName`, and available workspaces. |
+| **CRM Web State** | `useAuth()` loads user profile; calls `/wa/workspaces` and treats all workspaces as generic "instances". | Dedicated `WorkspaceContext` parsing `workspaceId` directly from the URL. |
 | **Sidebar Branding** | Hardcoded fallback: `user?.organizationName \|\| 'Neurixa Enterprise Workspace'`. | Dynamically displays current customer workspace name (`activeWorkspace.name`). |
-| **Feature Pages** | `Inbox`, `Campaigns`, `Templates`, `Contacts`, etc., receive an array of all instances/workspaces. | All feature tabs are strictly scoped to `activeWorkspaceId`. |
+| **Feature Pages** | `Inbox`, `Campaigns`, `Templates`, `Contacts`, etc., receive an array of all instances/workspaces. | All feature tabs are strictly scoped to `activeWorkspaceId` parsed from the URL. |
 
 ---
 
-## 3. Required Changes in `wingerx-crm/session-gateway`
+## 4. Required Changes in `wingerx-crm/session-gateway`
 
 The Session Gateway acts as the secure Backend-For-Frontend (BFF) proxying to `workflow_automation`.
 
-### 3.1. Update SSO Verification & Session Creation (`app/main.py`)
+### 4.1. Update SSO Verification & Session Creation (`app/main.py`)
 
 In `POST /crm-api/session/sso`:
-1. Receive `workspace_id` optionally in the payload if provided from the URL query params:
+1. Receive `workspace_id` from the payload:
    ```python
    ticket = body.get("ticket", "")
    requested_workspace_id = body.get("workspace_id")
@@ -79,10 +125,8 @@ In `POST /crm-api/session/sso`:
 3. Update `_open_session`:
    ```python
    async def _open_session(token: str, user: dict, workspace: Optional[dict] = None) -> JSONResponse:
-       # Determine active workspace: from ticket verification, or first operable workspace
        active_ws = workspace
        if not active_ws:
-           # Fallback: query user's operable workspaces and select default
            workspaces = await _operable_workspace_list(request, {"token": token})
            active_ws = workspaces[0] if workspaces else None
 
@@ -94,10 +138,9 @@ In `POST /crm-api/session/sso`:
            "created_at": time.time(),
        }
        await session_store.set(session_id, session_data)
-       # Return response with active_workspace
    ```
 
-### 3.2. Expose and Update Active Workspace via Session Endpoints
+### 4.2. Expose and Update Active Workspace via Session Endpoints
 
 1. **`GET /crm-api/session/me`**:
    Return the active workspace alongside the user:
@@ -141,7 +184,7 @@ In `POST /crm-api/session/sso`:
        return {"success": True, "active_workspace": record}
    ```
 
-### 3.3. Auto-Inject `workspace_id` in Proxied Calls
+### 4.3. Auto-Inject `workspace_id` in Proxied Calls
 
 In `session-gateway`, whenever `/crm-api/wa/*` routes are called without an explicit `workspace_id` query param, automatically fallback to `session["active_workspace"]["id"]`:
 ```python
@@ -152,36 +195,42 @@ if "workspace_id" not in params and session.get("active_workspace"):
 
 ---
 
-## 4. Required Changes in `wingerx-crm/wingerx-web`
+## 5. Required Changes in `wingerx-crm/wingerx-web`
 
-### 4.1. Capture Workspace in `useAuth` (`src/features/auth/api/use-auth.ts`)
+### 5.1. SSO Callback & URL Redirect (`src/features/auth/api/use-auth.ts`)
 
-Update `checkAuth` to parse both `ticket` and `workspace_id` (or `workspaceId`) from the query string:
+Update `checkAuth` to parse `ticket` and `workspace_id` on launch, exchange the ticket, and immediately redirect to the workspace route:
 
 ```typescript
-// Parse query parameters
+// Parse query parameters from SSO launch
 const ssoTicket = urlParams.get('ticket');
-const targetWorkspaceId = urlParams.get('workspace_id') || urlParams.get('workspaceId');
+const launchWorkspaceId = urlParams.get('workspace_id') || urlParams.get('workspaceId');
 
 if (ssoTicket) {
-  // Strip params from URL
-  window.history.replaceState({}, document.title, window.location.pathname);
+  try {
+    const ssoRes = await crmFetch('/session/sso', {
+      method: 'POST',
+      body: JSON.stringify({
+        ticket: ssoTicket,
+        workspace_id: launchWorkspaceId || undefined,
+      }),
+    });
+    const ssoJson = await ssoRes.json();
+    if (!ssoRes.ok) throw new Error(ssoJson.detail || 'Sign-in failed');
 
-  const ssoRes = await crmFetch('/session/sso', {
-    method: 'POST',
-    body: JSON.stringify({
-      ticket: ssoTicket,
-      workspace_id: targetWorkspaceId || undefined,
-    }),
-  });
-  const data = await ssoRes.json();
-  // Store user and active_workspace in state
+    const targetWsId = launchWorkspaceId || ssoJson.active_workspace?.id;
+    // Redirect browser to the workspace-scoped URL
+    window.location.replace(`/${targetWsId}/inbox`);
+    return;
+  } catch (err: any) {
+    setError(err.message);
+  }
 }
 ```
 
-### 4.2. Create Global Workspace Provider (`src/features/workspace/context/workspace-context.tsx`)
+### 5.2. URL-First Workspace Provider (`src/features/workspace/context/workspace-context.tsx`)
 
-Create a clean React context to manage active customer workspace across the CRM:
+Create a React Context that extracts `workspace_id` directly from `window.location.pathname`:
 
 ```typescript
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -197,62 +246,111 @@ export interface Workspace {
 interface WorkspaceContextType {
   activeWorkspace: Workspace | null;
   activeWorkspaceId: string;
+  activeTab: string;
   workspaces: Workspace[];
   isLoading: boolean;
-  switchWorkspace: (workspaceId: string) => Promise<void>;
+  isUnauthorized: boolean;
+  navigateToTab: (tab: string) => void;
+  switchWorkspace: (workspaceId: string) => void;
   refetchWorkspaces: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
 
+// Extract /{workspace_id}/{tab} from pathname
+export function parseRouteInfo() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  // Ignore special auth paths
+  if (parts[0] === 'auth' || parts[0] === 'login') {
+    return { workspaceId: '', tab: '' };
+  }
+  const workspaceId = parts[0] || '';
+  const tab = parts[1] || 'instances';
+  return { workspaceId, tab };
+}
+
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
+
+  const { workspaceId: routeWsId, tab: routeTab } = parseRouteInfo();
 
   const loadWorkspaces = async () => {
     try {
       setIsLoading(true);
       const res = await crmFetch('/wa/workspaces');
-      if (res.ok) {
-        const json = await res.json();
-        const list = json.workspaces || [];
-        setWorkspaces(list);
+      if (!res.ok) throw new Error('Failed to load workspaces');
+      const json = await res.json();
+      const list: Workspace[] = json.workspaces || [];
+      setWorkspaces(list);
 
-        // Retrieve saved workspace ID or default to session/first workspace
-        const savedWsId = localStorage.getItem('wingerx_crm_active_ws');
-        const matched = list.find((w: Workspace) => w.id === savedWsId) || list[0] || null;
-        setActiveWorkspace(matched);
+      // 1. Resolve workspace from URL
+      if (routeWsId) {
+        const matched = list.find((w) => w.id === routeWsId);
+        if (matched) {
+          setActiveWorkspace(matched);
+          setIsUnauthorized(false);
+          // Sync backend session
+          crmFetch('/session/active-workspace', {
+            method: 'POST',
+            body: JSON.stringify({ workspace_id: matched.id }),
+          });
+        } else {
+          // User does not have access to this workspace
+          setIsUnauthorized(true);
+        }
+      } else if (list.length > 0) {
+        // Root path without workspace -> redirect to default
+        const defaultWs = list.find((w) => w.is_default) || list[0];
+        window.history.replaceState(null, '', `/${defaultWs.id}/instances`);
+        setActiveWorkspace(defaultWs);
+        setIsUnauthorized(false);
       }
+    } catch {
+      setIsUnauthorized(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const switchWorkspace = async (workspaceId: string) => {
-    const target = workspaces.find((w) => w.id === workspaceId);
-    if (!target) return;
+  const navigateToTab = (tab: string) => {
+    if (!activeWorkspace) return;
+    window.history.pushState(null, '', `/${activeWorkspace.id}/${tab}`);
+    // Trigger popstate/re-render
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
-    await crmFetch('/session/active-workspace', {
-      method: 'POST',
-      body: JSON.stringify({ workspace_id: workspaceId }),
-    });
-
-    localStorage.setItem('wingerx_crm_active_ws', workspaceId);
-    setActiveWorkspace(target);
+  const switchWorkspace = (newWorkspaceId: string) => {
+    const currentTab = parseRouteInfo().tab || 'instances';
+    window.location.assign(`/${newWorkspaceId}/${currentTab}`);
   };
 
   useEffect(() => {
     loadWorkspaces();
-  }, []);
+
+    const handlePopState = () => {
+      const { workspaceId: currentWsId } = parseRouteInfo();
+      if (currentWsId && workspaces.length > 0) {
+        const matched = workspaces.find((w) => w.id === currentWsId);
+        if (matched) setActiveWorkspace(matched);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [routeWsId]);
 
   return (
     <WorkspaceContext.Provider
       value={{
         activeWorkspace,
         activeWorkspaceId: activeWorkspace?.id || '',
+        activeTab: routeTab,
         workspaces,
         isLoading,
+        isUnauthorized,
+        navigateToTab,
         switchWorkspace,
         refetchWorkspaces: loadWorkspaces,
       }}
@@ -269,9 +367,21 @@ export const useWorkspace = () => {
 };
 ```
 
-### 4.3. Update Main Layout & Header (`src/App.tsx`)
+### 5.3. Update Main Layout & Header (`src/App.tsx`)
 
-1. **Sidebar Customer Name**:
+1. **Sidebar Navigation Updates**:
+   When navigating between tabs, use `navigateToTab('inbox')` instead of `setActiveNav('inbox')`:
+   ```tsx
+   <button
+     onClick={() => navigateToTab('inbox')}
+     className={activeTab === 'inbox' ? 'bg-[#2563EB] text-white' : ''}
+   >
+     <MessageSquare className="w-4 h-4 shrink-0" />
+     <span>Live Inbox</span>
+   </button>
+   ```
+
+2. **Sidebar Customer Name**:
    Replace:
    ```tsx
    <span>
@@ -291,27 +401,25 @@ export const useWorkspace = () => {
    </div>
    ```
 
-2. **Workspace Selector Dropdown (Header)**:
-   Add a dropdown in the top header beside the Refresh button allowing users with access to multiple workspaces to switch between customers without returning to `/home`.
+3. **Workspace Selector Dropdown (Header)**:
+   Add a dropdown in the top header beside the Refresh button that calls `switchWorkspace(selectedId)` which immediately updates the URL.
 
-3. **Topology / Instances Loading (`useWaTopology`)**:
+4. **Topology / Instances Loading (`useWaTopology`)**:
    Modify `loadTopology` to scope connection queries strictly to `activeWorkspaceId`:
    ```typescript
-   // In useWaTopology:
    const loadTopology = useCallback(async (targetWsId?: string): Promise<WhatsAppInstance[]> => {
      const wsId = targetWsId || activeWorkspaceId;
      if (!wsId) return [];
 
      const res = await crmFetch(`/wa/connections?workspace_id=${encodeURIComponent(wsId)}`);
      const connections = await readJson(res);
-     // Map only connections for the active workspace
      return mapConnectionsToInstances(wsId, connections);
    }, [activeWorkspaceId]);
    ```
 
 ---
 
-## 5. Scoping WhatsApp CRM Feature Tabs
+## 6. Scoping WhatsApp CRM Feature Tabs
 
 Each feature tab in `wingerx-web` must be scoped to `activeWorkspaceId`:
 
@@ -328,13 +436,12 @@ Each feature tab in `wingerx-web` must be scoped to `activeWorkspaceId`:
 
 ---
 
-## 6. Corresponding Backend Changes in `workflow_automation`
+## 7. Corresponding Backend Changes in `workflow_automation`
 
 To ensure full compatibility with the CRM changes, `workflow_automation` must provide the workspace identity during launch:
 
 1. **`POST /api/workspaces/{workspace_id}/products/crm_whatsapp/launch`** in `workspace_home.py`:
    ```python
-   # Pass workspace_id to generate_sso_ticket
    result = await generate_sso_ticket(
        GenerateTicketRequest(
            target_service="whatsapp_crm",
@@ -375,7 +482,7 @@ To ensure full compatibility with the CRM changes, `workflow_automation` must pr
 
 ---
 
-## 7. Developer Implementation Checklist
+## 8. Developer Implementation Checklist
 
 ### Phase 1: SSO & Session Gateway
 - [ ] Update `POST /crm-api/session/sso` to parse and store `workspace_id`.
@@ -383,11 +490,13 @@ To ensure full compatibility with the CRM changes, `workflow_automation` must pr
 - [ ] Implement `POST /crm-api/session/active-workspace` with workspace authorization validation.
 - [ ] Add auto-injection of `workspace_id` in `session-gateway` proxy handlers.
 
-### Phase 2: Frontend Context & Shell UI
-- [ ] Implement `WorkspaceProvider` in `src/features/workspace/context/workspace-context.tsx`.
+### Phase 2: URL Routing & Frontend Context
+- [ ] Implement `parseRouteInfo()` and `WorkspaceProvider` in `src/features/workspace/context/workspace-context.tsx`.
+- [ ] Ensure `window.location.pathname` maps to `/{workspace_id}/{tab}`.
 - [ ] Wrap `App.tsx` with `WorkspaceProvider`.
+- [ ] Update sidebar navigation to call `navigateToTab` updating the URL path.
 - [ ] Replace hardcoded `'Neurixa Enterprise Workspace'` in the sidebar with dynamic `activeWorkspace.name`.
-- [ ] Add workspace switcher dropdown in top header.
+- [ ] Add workspace switcher dropdown in top header navigating to `/{new_workspace_id}/{tab}`.
 
 ### Phase 3: Tab Scoping
 - [ ] Update `useWaTopology` to fetch connections solely for `activeWorkspaceId`.
@@ -397,7 +506,8 @@ To ensure full compatibility with the CRM changes, `workflow_automation` must pr
 - [ ] Verify `WhatsAppOnboardingPage` binds newly connected numbers to `activeWorkspaceId`.
 
 ### Phase 4: Acceptance Testing
+- [ ] **URL Persistence Test**: Navigate to `/ws-123/inbox`, click on "Campaigns". Verify URL becomes `/ws-123/campaigns`.
 - [ ] **Cross-Tenant Test**: Open CRM under Customer A (`workspace_A`). Verify only Customer A's chats and numbers appear.
-- [ ] **Switching Test**: Switch to Customer B (`workspace_B`) via header dropdown or `/home/[workspace_B]`. Verify Customer A's data is immediately cleared and Customer B's data loads.
-- [ ] **Direct URL / Refresh Test**: Refresh the browser on CRM. Verify active workspace is preserved and does not reset to a default or hardcoded organization.
-- [ ] **Authorization Test**: Attempt to query Customer B's conversations using Customer A's session. Confirm server returns `403 Forbidden` / `404 Not Found`.
+- [ ] **Direct URL / Refresh Test**: Refresh browser on `https://crm.wingerx.com/ws-123/inbox`. Verify active workspace is preserved directly from the URL.
+- [ ] **Switching Test**: Switch to Customer B via header dropdown. Verify URL changes to `/workspace_B/inbox` and data updates.
+- [ ] **Authorization Test**: Paste an unauthorized workspace ID into the URL (`/foreign-ws/inbox`). Confirm app presents Access Denied / 403.
