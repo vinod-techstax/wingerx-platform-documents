@@ -18,25 +18,26 @@ $$\mathbf{1\ Customer\ =\ 1\ Workspace\ =\ 1\ WhatsApp\ CRM\ Instance}$$
 sequenceDiagram
     autonumber
     actor User
-    participant WingerX as WingerX Web (/home/[wsId])
-    participant Backend as WingerX Backend (workflow_automation)
-    participant CRM_Web as CRM Frontend (wingerx-web)
-    participant Gateway as CRM Session Gateway (session-gateway)
+    participant WingerX as WingerX Web (/home)
+    participant Backend as WingerX Backend
+    participant CRM_Web as CRM Frontend
+    participant Gateway as CRM Gateway
 
     User->>WingerX: Selects Customer Workspace & Clicks "WhatsApp CRM"
     WingerX->>Backend: POST /api/workspaces/{workspace_id}/products/crm_whatsapp/launch
     Note over Backend: Issues Single-Use SSO Ticket embedding user_id & workspace_id
-    Backend-->>WingerX: { url: "https://crm.wingerx.com/auth/sso-callback?ticket=sso_tk_123&workspace_id=ws-123" }
+    Backend-->>WingerX: Redirect URL with ticket & workspace_id
     WingerX->>CRM_Web: Redirect to SSO Callback URL with ticket & workspace_id
-    CRM_Web->>Gateway: POST /crm-api/session/sso { ticket: "sso_tk_123", workspace_id: "ws-123" }
-    Gateway->>Backend: POST /api/auth/sso/verify-ticket { ticket, target_service: "whatsapp_crm" }
-    Backend-->>Gateway: { user: { id, email, role }, workspace: { id: "ws-123", name: "Acme Corp" }, tokens }
-    Gateway-->>CRM_Web: Set-Cookie: crm_session (HttpOnly, Secure) + { user, active_workspace: { id, name } }
+    CRM_Web->>Gateway: POST /crm-api/session/sso (ticket, workspace_id)
+    Gateway->>Backend: POST /api/auth/sso/verify-ticket
+    Backend-->>Gateway: User profile, tokens & active workspace details
+    Gateway-->>CRM_Web: Set-Cookie: crm_session + active_workspace
     CRM_Web->>CRM_Web: Initialize WorkspaceProvider with active_workspace
     CRM_Web->>Gateway: GET /crm-api/wa/connections?workspace_id=ws-123
-    Gateway->>Backend: GET /api/whatsapp/connections?workspace_id=ws-123 (with Bearer Token)
-    Backend-->>Gateway-->>CRM_Web: Returns connections for ws-123 only
-    Note over CRM_Web: Displays "Acme Corp" in Sidebar & loads only ws-123 data
+    Gateway->>Backend: GET /api/whatsapp/connections?workspace_id=ws-123
+    Backend-->>Gateway: Returns connections for ws-123 only
+    Gateway-->>CRM_Web: Proxies connections for ws-123 only
+    Note over CRM_Web: Displays customer name in Sidebar & loads only ws-123 data
 ```
 
 ---
